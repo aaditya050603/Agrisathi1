@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriSathi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .header {
+            background-color: #28a745;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            border-radius: 0.25rem;
+        }
+        #response {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="header">
+            <h1>🌾 AgriSathi</h1>
+            <p>Your AI assistant for agricultural market prices</p>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body">
+                <p>Welcome to AgriSathi! I can help you find agricultural market prices across India. </p>
+                <form id="query-form">
+                    <div class="row g-3 align-items-end">
+                         <div class="col-md-4">
+                            <label for="commodity-input" class="form-label">Commodity</label>
+                            <input type="text" id="commodity-input" class="form-control" placeholder="e.g., Onion" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="state-select" class="form-label">State</label>
+                            <select id="state-select" class="form-select">
+                                <option selected>Choose state...</option>
+                                <option>Andaman and Nicobar Islands</option>
+                                <option>Andhra Pradesh</option>
+                                <option>Arunachal Pradesh</option>
+                                <option>Assam</option>
+                                <option>Bihar</option>
+                                <option>Chandigarh</option>
+                                <option>Chhattisgarh</option>
+                                <option>Dadra and Nagar Haveli</option>
+                                <option>Daman and Diu</option>
+                                <option>Goa</option>
+                                <option>Gujarat</option>
+                                <option>Haryana</option>
+                                <option>Himachal Pradesh</option>
+                                <option>Jammu and Kashmir</option>
+                                <option>Jharkhand</option>
+                                <option>Karnataka</option>
+                                <option>Kerala</option>
+                                <option>Lakshadweep</option>
+                                <option>Madhya Pradesh</option>
+                                <option>Maharashtra</option>
+                                <option>Manipur</option>
+                                <option>Meghalaya</option>
+                                <option>Mizoram</option>
+                                <option>Nagaland</option>
+                                <option>National Capital Territory of Delhi</option>
+                                <option>Odisha</option>
+                                <option>Puducherry</option>
+                                <option>Punjab</option>
+                                <option>Rajasthan</option>
+                                <option>Sikkim</option>
+                                <option>Tamil Nadu</option>
+                                <option>Telangana</option>
+                                <option>Tripura</option>
+                                <option>Uttar Pradesh</option>
+                                <option>Uttarakhand</option>
+                                <option>West Bengal</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label for="market-input" class="form-label">Market name <span class="text-muted">(optional)</span></label>
+                            <input type="text" id="market-input" class="form-control" placeholder="e.g., Lasalgaon">
+                        </div>
+                        <div class="col-md-1">
+                        <button class="btn btn-success w-100" type="submit">
+                        <i class="bi bi-search"></i> <!-- Bootstrap search icon -->
+                        </button>
+                        </div>
+
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                Response
+            </div>
+            <div class="card-body">
+                <div id="response"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('query-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const commodity = document.getElementById('commodity-input').value;
+            const state = document.getElementById('state-select').value;
+            const market = document.getElementById('market-input').value;
+            const responseDiv = document.getElementById('response');
+
+            if (state === 'Choose state...') {
+                responseDiv.innerHTML = '<div class="alert alert-warning">Please select a state.</div>';
+                return;
+            }
+
+            responseDiv.innerHTML = 'Loading...';
+
+            fetch('/api/query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ commodity: commodity, state: state, market: market })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    responseDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                } else if (data.type === 'table' && data.data && Array.isArray(data.data.records)) {
+                    const records = data.data.records;
+                    if (records.length === 0) {
+                        responseDiv.innerHTML = '<div class="alert alert-warning">No records found.</div>';
+                        return;
+                    }
+                    let table = '<table class="table table-striped">';
+                    table += '<thead><tr>';
+                    const headers = Object.keys(records[0]);
+                    headers.forEach(header => {
+                        table += `<th>${header}</th>`;
+                    });
+                    table += '</tr></thead>';
+                    table += '<tbody>';
+                    records.forEach(row => {
+                        table += '<tr>';
+                        headers.forEach(header => {
+                            table += `<td>${row[header] ?? ''}</td>`;
+                        });
+                        table += '</tr>';
+                    });
+                    table += '</tbody></table>';
+                    responseDiv.innerHTML = table;
+                } else if (data.type === 'text' && typeof data.response === 'string') {
+                    responseDiv.innerHTML = data.response;
+                } else {
+                    responseDiv.innerHTML = '<div class="alert alert-warning">No data to display.</div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                responseDiv.innerHTML = '<div class="alert alert-danger">An error occurred.</div>';
+            });
+        });
+
+        // Simulate API response for testing
+        function simulateApiResponse() {
+            return {
+                "type": "table",
+                "data": {
+                    "crop": "Tomato",
+                    "state": "Maharashtra",
+                    "records": [
+                        {
+                            "Market": "Market 1",
+                            "Min Price (₹)": 1000,
+                            "Max Price (₹)": 1500,
+                            "Modal Price (₹)": 1250,
+                            "Date": "2025-09-09"
+                        },
+                        {
+                            "Market": "Market 2",
+                            "Min Price (₹)": 1510,
+                            "Max Price (₹)": 2000,
+                            "Modal Price (₹)": 1820,
+                            "Date": "2025-09-09"
+                        }
+                    ]
+                }
+            };
+        }
+
+        // For testing: You can pre-fill the form like this and manually submit.
+        // document.getElementById('commodity-input').value = 'Tomato';
+        // document.getElementById('state-select').value = 'Maharashtra';
+        // document.getElementById('query-form').dispatchEvent(new Event('submit'));
+    </script>
+</body>
+</html>

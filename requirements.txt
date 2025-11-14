@@ -1,0 +1,9 @@
+requests
+langchain
+langchain-tavily
+langgraph
+langchain-google-genai
+fuzzywuzzy
+python-levenshtein
+python-dotenv
+Flask
