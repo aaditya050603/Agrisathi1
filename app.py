@@ -40,8 +40,8 @@ def market_price(query: str) -> str:
     params = {
         "api-key": DATA_GOV_API_KEY,
         "format": "json",
-        "filters[state]": state.title(),
-        "filters[commodity]": commodity.title(),
+        "filters[State]": state.title(),
+        "filters[Commodity]": commodity.title(),
         "limit": 5000
     }
 
