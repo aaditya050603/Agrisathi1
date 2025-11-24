@@ -17,7 +17,7 @@ if not DATA_GOV_API_KEY:
 
 USE_AGENT = bool(GOOGLE_API_KEY)
 
-BASE_URL = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
+BASE_URL = "https://api.data.gov.in/resource/32e934d1-3c2b-4a24-9b3a-7fc4f1fc9de8"
 
 
 # ------------------------- TOOL FUNCTION ----------------------------------------
