@@ -5,31 +5,30 @@ from fuzzywuzzy import process
 from flask import Flask, jsonify, render_template, request
 import dotenv
 
-# Load environment variables
+# Load env variables
 dotenv.load_dotenv()
 
+# API Keys
 DATA_GOV_API_KEY = os.getenv("api_mandi")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not DATA_GOV_API_KEY:
-    raise RuntimeError("❌ Missing api_mandi. Please configure environment variable.")
+    raise RuntimeError("❌ Missing api_mandi (DATA_GOV_API_KEY). Please add it to environment.")
 
 USE_AGENT = bool(GOOGLE_API_KEY)
 
-# DAILY / HISTORICAL DATASET
-BASE_URL = "https://api.data.gov.in/resource/32e934d1-3c2b-4a24-9b3a-7fc4f1fc9de8"
+BASE_URL = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
 
-# ---------------- TOOL FUNCTION ---------------------
 
+# ------------------------- TOOL FUNCTION ----------------------------------------
 from langchain.tools import tool
 
 @tool
 def market_price(query: str) -> str:
     """
-    Fetch daily historical mandi prices.
-    Query format -> price of onion in maharashtra
+    Fetches agriculture mandi prices via data.gov.in API
+    Query format: "price of tomato in maharashtra"
     """
-
     query = query.lower()
     if " in " not in query:
         return json.dumps({"error": "Format error. Use 'price of [commodity] in [state]'"})
@@ -40,9 +39,9 @@ def market_price(query: str) -> str:
     params = {
         "api-key": DATA_GOV_API_KEY,
         "format": "json",
-        "filters[State]": state.title(),
-        "filters[Commodity]": commodity.title(),
-        "limit": 5000
+        "filters[state]": state.title(),
+        "filters[commodity]": commodity.title(),
+        "limit": 100
     }
 
     try:
@@ -50,22 +49,19 @@ def market_price(query: str) -> str:
         response.raise_for_status()
         data = response.json()
 
-        records = data.get("records", [])
-
-        # Sort by date newest first
-        records = sorted(records, key=lambda x: x.get("arrival_date", ""), reverse=True)
-
         return json.dumps({
             "crop": commodity,
             "state": state,
-            "records": records
+            "records": data.get("records", [])
         })
 
+    except requests.exceptions.RequestException as e:
+        return json.dumps({"error": f"API request failed: {e}"})
     except Exception as e:
-        return json.dumps({"error": f"API failure: {e}"})
+        return json.dumps({"error": f"Unexpected error: {e}"})
 
 
-# ---------------- AGENT SETUP ----------------------
+# ------------------------- AGENT SETUP -----------------------------------------
 agent_executor = None
 
 if USE_AGENT:
@@ -81,12 +77,12 @@ if USE_AGENT:
             temperature=0
         )
 
-        prompt = PromptTemplate(
+        react_prompt = PromptTemplate(
             input_variables=["input", "agent_scratchpad"],
             template="""
-You are an agriculture mandi assistant. 
-Use tool 'market_price' to get daily mandi prices from data.gov.in.
-If no data found, say "No records available."
+You are an agriculture mandi price assistant helping farmers.
+Use tool 'market_price' when needed to get real mandi data from the Govt website.
+If no data found, say: "No data found for this crop or location."
 
 {agent_scratchpad}
 User Query: {input}
@@ -96,10 +92,8 @@ User Query: {input}
         agent = create_tool_calling_agent(
             llm=llm,
             tools=[market_price],
-            prompt=prompt
+            prompt=react_prompt
         )
-
-        from langchain.agents import AgentExecutor
 
         agent_executor = AgentExecutor(
             agent=agent,
@@ -108,20 +102,19 @@ User Query: {input}
             handle_parsing_errors=True
         )
 
-        print("🌟 Hybrid Agent Mode Enabled")
+        print("🌟 Gemini Agent Enabled - Hybrid Mode Active")
 
     except Exception as e:
-        print("⚠ Agent load failed:", e)
+        print(f"⚠ Agent initialization failed. Running tool-only mode: {e}")
         agent_executor = None
 
 
-# ---------------- FLASK SERVER ---------------------
+# ------------------------- FLASK SERVER -----------------------------------------
 app = Flask(__name__)
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/api/query", methods=["POST"])
 def query():
@@ -132,13 +125,14 @@ def query():
     question = data.get("question")
 
     try:
-        # Natural language agent mode
         if agent_executor and question:
-            print("🤖 Using agent for natural query")
+            print("🤖 Using AI agent for natural question")
             response = agent_executor.invoke({"input": question})
             return jsonify({"type": "agent", "response": response})
 
-        # Manual mode
+        if not commodity or not state:
+            return jsonify({"error": "Commodity & State are required"}), 400
+
         user_input = f"price of {commodity} in {state}"
         result = market_price.invoke(user_input)
         data = json.loads(result)
@@ -148,26 +142,24 @@ def query():
 
         records = data.get("records", [])
 
-        # Optional market filter
         if market:
             names = [rec.get("market", "") for rec in records]
             best_match, _ = process.extractOne(market, names)
             records = [rec for rec in records if rec.get("market") == best_match]
 
         if not records:
-            return jsonify({"error": "No records available"})
+            return jsonify({"error": "No records found"}), 404
 
-        # Format response
         formatted_records = [{
-            "Date": rec.get("arrival_date", ""),
             "Market": rec.get("market", ""),
-            "Max Price (₹)": rec.get("max_price", ""),
             "Min Price (₹)": rec.get("min_price", ""),
-            "Modal Price (₹)": rec.get("modal_price", "")
+            "Max Price (₹)": rec.get("max_price", ""),
+            "Modal Price (₹)": rec.get("modal_price", ""),
+            "Date": rec.get("arrival_date", "")
         } for rec in records]
 
         return jsonify({
-            "type": "daily",
+            "type": "table",
             "data": {
                 "crop": data.get("crop", ""),
                 "state": data.get("state", ""),
@@ -176,7 +168,7 @@ def query():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": f"Unexpected error: {e}"})
 
 
 if __name__ == "__main__":
